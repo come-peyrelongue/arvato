@@ -8,7 +8,7 @@ st.title("Data Ingestion")
 # TABS (REAL / FORECAST)
 # ============================================================
 
-tab_real, tab_forecast = st.tabs(["📦 Real Data", "📈 Forecast Data"])
+tab_real, tab_forecast = st.tabs(["Real Data", "Forecast Data"])
 
 # ============================================================
 # REAL DATA

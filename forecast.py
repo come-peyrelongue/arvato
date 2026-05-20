@@ -1,233 +1,187 @@
 import streamlit as st
 import pandas as pd
 from datetime import timedelta
-from pathlib import Path
+import re
 import json
-from math import ceil
 
-# ============================================================
-# CONFIG
-# ============================================================
+from utils import (
+    load_companies,
+    load_productivity,
+    get_feedback_coefficient,
+    compute_historical_coefficient,
+    compute_employees,
+    get_historical_data_for_ai,
+    POLES
+)
 
-DATA_DIR = Path("data")
-COMPANIES_FILE = DATA_DIR / "companies.json"
-SIMULATION_FILE = DATA_DIR / "simulations.csv"
+# =========================
+# GEMINI SETUP
+# =========================
 
-SHIFT_HOURS = 7
+try:
+    import google.generativeai as genai
+    GOOGLE_AI_AVAILABLE = True
+except:
+    GOOGLE_AI_AVAILABLE = False
 
-POLES = ["PICKING", "PROMO", "BULK", "GLOBAL"]
+GOOGLE_API_KEY = "AIzaSyD997azn1C0gqEB_lIgez01qfryh_LDBks"
 
-DEFAULT_PRODUCTIVITY = {
-    "PICKING": 157,
-    "PROMO": 125,
-    "BULK": 100,
-    "GLOBAL": 150
-}
+def init_model():
+    if not GOOGLE_AI_AVAILABLE:
+        return None
 
-# ============================================================
-# STORAGE HELPERS
-# ============================================================
+    if not GOOGLE_API_KEY or "YOUR" in GOOGLE_API_KEY:
+        return None
 
-def load_companies():
-    if not COMPANIES_FILE.exists():
-        return []
-    return json.loads(COMPANIES_FILE.read_text())
-
-
-def productivity_file(company):
-    return DATA_DIR / f"productivity_{company}.json"
-
-
-def load_productivity(company):
-
-    path = productivity_file(company)
-
-    if not path.exists():
-        return DEFAULT_PRODUCTIVITY
-
-    return json.loads(path.read_text())
+    try:
+        genai.configure(api_key=GOOGLE_API_KEY)
+        return genai.GenerativeModel("gemini-2.5-flash")
+    except Exception as e:
+        st.warning(f"Gemini init error: {e}")
+        return None
 
 
-def coefficients_file():
-    return DATA_DIR / "coefficients.json"
+# =========================
+# AI FUNCTION
+# =========================
+
+def get_ai_coef(company, hist, target_date):
+    if not hist:
+        return 1.0, "No historical data available", "Insufficient data", 0.0
+
+    model = init_model()
+    if not model:
+        return 1.0, "AI disabled", "AI not available", 0.0
+
+    current_month = pd.to_datetime(target_date).strftime("%B")
+    current_period = pd.to_datetime(target_date).to_period("M")
+
+    prompt = f"""
+You are a supply chain forecasting expert.
+
+Company: {company}
+Forecast period: {current_period} ({current_month})
+
+Focus ONLY on seasonality relevant to this period.
+
+Historical data:
+{json.dumps(hist, indent=2)}
+
+TASK:
+1. Determine seasonality for this period
+2. Ignore irrelevant peaks (e.g. Christmas if not relevant)
+3. Compute coefficient for THIS period
+4. Estimate confidence (0 to 1)
+
+Return ONLY JSON:
+{{
+  "coefficient": 1.0,
+  "confidence": 0.85,
+  "reason": "short explanation in English"
+}}
+"""
+
+    try:
+        res = model.generate_content(prompt)
+        text = res.text
+
+        m = re.search(r"\{.*\}", text, re.DOTALL)
+        if not m:
+            return 1.0, "bad format", "Parsing error", 0.0
+
+        data = json.loads(m.group())
+
+        coef = float(data.get("coefficient", 1.0))
+        reason = data.get("reason", "AI analysis")
+        confidence = float(data.get("confidence", 0.5))
+
+        confidence = max(0.0, min(confidence, 1.0))
+
+        return coef, reason, "AI seasonal adjustment applied ✅", confidence
+
+    except Exception as e:
+        return 1.0, str(e), "AI error ❌", 0.0
 
 
-def load_coefficients():
-
-    file = coefficients_file()
-
-    if not file.exists():
-        return {}
-
-    return json.loads(file.read_text())
-
-
-def get_feedback_coefficient(company):
-
-    data = load_coefficients()
-
-    if company not in data:
-        return 1.0
-
-    return data[company].get("feedback", 1.0)
-
-
-def compute_historical_coefficient():
-
-    forecast_file = DATA_DIR / "forecast" / "forecast_history.csv"
-
-    if not forecast_file.exists():
-        return 1.0
-
-    df = pd.read_csv(forecast_file)
-
-    if "forecast_lines" not in df.columns:
-        return 1.0
-
-    if "real_lines" not in df.columns:
-        return 1.0
-
-    total_forecast = df["forecast_lines"].sum()
-
-    if total_forecast == 0:
-        return 1.0
-
-    return df["real_lines"].sum() / total_forecast
-
-
-# ============================================================
-# CALCULATION
-# ============================================================
-
-def compute_employees(lines, productivity, feedback_coef):
-
-    capacity = productivity * SHIFT_HOURS * feedback_coef
-
-    return ceil(lines / capacity)
-
+# =========================
+# SIMULATION
+# =========================
 
 def simulate_week(company, pole, start_date, total_lines):
 
-    productivity = load_productivity(company).get(pole, 120)
+    prod = load_productivity(company).get(pole, 120)
+    hist_coef = compute_historical_coefficient()
+    feedback = get_feedback_coefficient(company)
 
-    historical_coef = compute_historical_coefficient()
+    hist = get_historical_data_for_ai(company)
 
-    feedback_coef = get_feedback_coefficient(company)
+    ai_coef, ai_reason, ai_explain, confidence = get_ai_coef(
+        company,
+        hist,
+        start_date
+    )
 
-    adjusted_lines = (total_lines * historical_coef) / 4
+    adjusted_lines = (total_lines * hist_coef * feedback * ai_coef) / 4
 
-    results = []
-
-    for i in range(7):
-
-        current_day = start_date + timedelta(days=i)
-
-        employees = compute_employees(
-            adjusted_lines,
-            productivity,
-            feedback_coef
-        )
-
-        results.append({
-            "date": current_day.date(),
-            "pole": pole,
-            "forecast_lines": round(adjusted_lines),
-            "employees_required": employees
-        })
+    employees = compute_employees(adjusted_lines, prod, 1.0)
 
     return (
-        pd.DataFrame(results),
-        productivity,
-        historical_coef,
-        feedback_coef
+        employees,
+        adjusted_lines,
+        prod,
+        hist_coef,
+        feedback,
+        ai_coef,
+        ai_reason,
+        ai_explain,
+        confidence
     )
 
 
-# ============================================================
-# SAVE SIMULATION
-# ============================================================
-
-def save_simulation(company, df):
-
-    df["company"] = company
-
-    if SIMULATION_FILE.exists():
-
-        old = pd.read_csv(SIMULATION_FILE)
-
-        final = pd.concat([old, df], ignore_index=True)
-
-    else:
-        final = df
-
-    final.to_csv(SIMULATION_FILE, index=False)
-
-
-# ============================================================
-# PAGE
-# ============================================================
+# =========================
+# UI
+# =========================
 
 st.title("Forecast")
 
 companies = load_companies()
 
 if not companies:
-
-    st.warning("No companies available.")
-
+    st.error("No companies.json found or empty")
     st.stop()
-
-# ============================================================
-# HEADER
-# ============================================================
 
 col1, col2 = st.columns(2)
 
 with col1:
-
-    company = st.selectbox(
-        "Company",
-        companies
-    )
+    company = st.selectbox("Company", companies)
 
 with col2:
-
-    pole = st.selectbox(
-        "Pole",
-        POLES
-    )
-
-# ============================================================
-# INPUTS
-# ============================================================
+    pole = st.selectbox("Pole", POLES)
 
 col3, col4 = st.columns(2)
 
 with col3:
-
-    start_date = st.date_input(
-        "Start week"
-    )
+    start_date = st.date_input("Start week")
 
 with col4:
-
     total_lines = st.number_input(
         "Monthly forecast lines",
         min_value=0,
-        value=100000
+        value=0
     )
-
-# ============================================================
-# GENERATE BUTTON
-# ============================================================
 
 if st.button("Generate Forecast", use_container_width=True):
 
     (
-        df,
-        productivity,
-        historical_coef,
-        feedback_coef
+        employees,
+        adjusted_lines,
+        prod,
+        h,
+        f,
+        ai,
+        reason,
+        explain,
+        confidence
     ) = simulate_week(
         company,
         pole,
@@ -235,85 +189,38 @@ if st.button("Generate Forecast", use_container_width=True):
         total_lines
     )
 
-    save_simulation(company, df)
+    st.subheader("Result")
 
-    # ========================================================
-    # EXPLANATION
-    # ========================================================
+    st.metric("Employees required", f"{employees}")
+    st.metric("AI Confidence", f"{confidence:.2f}")
 
-    st.subheader("Calculation Explanation")
+    st.progress(int(confidence * 100))
+
+    st.write("### Calculation explanation")
 
     st.markdown(f"""
-    ### Forecast logic
+- Base lines: **{total_lines}**
+- Historical coefficient: **{h:.2f}**
+- Feedback coefficient: **{f:.2f}**
+- AI seasonal coefficient: **{ai:.2f}**
+- AI confidence: **{confidence:.2f}**
+- Productivity: **{prod} lines/hour**
 
-    - Productivity: **{productivity} lines/hour**
-    - Shift duration: **{SHIFT_HOURS} hours**
-    - Historical coefficient: **{historical_coef:.2f}**
-    - Feedback coefficient: **{feedback_coef:.2f}**
+---
 
-    ### Final formula
+### Formula
+$
+Adjusted Lines = (Lines × Hist × Feedback × AI) / 4  
+Employees = ceil(Adjusted Lines / (Productivity × 7h shift))
+$
 
-    Adjusted lines:
+---
 
-    ```text
-    adjusted_lines = monthly_lines × historical_coefficient / 4
-    ```
+### AI explanation
+{reason}
 
-    Employee capacity:
+---
 
-    ```text
-    capacity = productivity × shift_hours × feedback_coefficient
-    ```
-
-    Staffing calculation:
-
-    ```text
-    employees = adjusted_lines / capacity
-    ```
-
-    Final result is rounded up.
-    """)
-
-    # ========================================================
-    # KPIS
-    # ========================================================
-
-    peak_staff = int(df["employees_required"].max())
-    avg_staff = int(df["employees_required"].mean())
-
-    k1, k2 = st.columns(2)
-
-    with k1:
-        st.metric(
-            "Peak Staffing",
-            peak_staff
-        )
-
-    with k2:
-        st.metric(
-            "Average Staffing",
-            avg_staff
-        )
-
-    # ========================================================
-    # TABLE
-    # ========================================================
-
-    st.subheader("Weekly Staffing Plan")
-
-    st.dataframe(
-        df,
-        use_container_width=True
-    )
-
-    # ========================================================
-    # CHART
-    # ========================================================
-
-    st.subheader("Employees Evolution")
-
-    chart_df = df[["date", "employees_required"]]
-
-    st.line_chart(
-        chart_df.set_index("date")
-    )
+### System note
+{explain}
+""")
