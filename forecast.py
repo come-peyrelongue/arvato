@@ -24,7 +24,7 @@ try:
 except:
     GOOGLE_AI_AVAILABLE = False
 
-GOOGLE_API_KEY = "AIzaSyD997azn1C0gqEB_lIgez01qfryh_LDBks"
+GOOGLE_API_KEY = "AIzaSyAIJnREhIXOZfMWLEUsBeSXtbW6nzSNaaU"
 
 def init_model():
     if not GOOGLE_AI_AVAILABLE:
@@ -45,8 +45,15 @@ def init_model():
 # AI FUNCTION
 # =========================
 
-def get_ai_coef(company, hist, target_date):
-    if not hist:
+def get_ai_coef(company, pole, hist_pole, hist_all, target_date):
+    """
+    company: company name
+    pole: pole being forecasted
+    hist_pole: monthly history filtered by pole
+    hist_all: monthly history for ALL poles (context)
+    target_date: date being forecasted
+    """
+    if not hist_pole and not hist_all:
         return 1.0, "No historical data available", "Insufficient data", 0.0
 
     model = init_model()
@@ -56,24 +63,45 @@ def get_ai_coef(company, hist, target_date):
     current_month = pd.to_datetime(target_date).strftime("%B")
     current_period = pd.to_datetime(target_date).to_period("M")
 
+    # Compute coverage info for pole-specific data
+    years_pole = set()
+    for h in hist_pole:
+        years_pole.add(h["period"][:4])
+
+    # Compute coverage info for all data
+    years_all = set()
+    for h in hist_all:
+        years_all.add(h["period"][:4])
+
+    num_months_pole = len(hist_pole)
+    num_months_all = len(hist_all)
+    num_years_all = len(years_all)
+
     prompt = f"""
 You are a supply chain forecasting expert.
 
 Company: {company}
+Pole: {pole}
 Forecast period: {current_period} ({current_month})
 
-Focus ONLY on seasonality relevant to this period.
+== POLE-SPECIFIC DATA ({pole}) — {num_months_pole} months, years: {', '.join(sorted(years_pole)) if years_pole else 'none'} ==
+{json.dumps(hist_pole, indent=2)}
 
-Historical data:
-{json.dumps(hist, indent=2)}
+== ALL POLES COMBINED (context) — {num_months_all} months spanning {num_years_all} years ({', '.join(sorted(years_all))}) ==
+{json.dumps(hist_all, indent=2)}
 
-TASK:
-1. Determine seasonality for this period
-2. Ignore irrelevant peaks (e.g. Christmas if not relevant)
-3. Compute coefficient for THIS period
-4. Estimate confidence (0 to 1)
+INSTRUCTIONS:
+1. Use pole-specific data as primary source for seasonality.
+2. Use all-poles data as secondary context to infer general seasonal patterns.
+3. Compute a seasonality coefficient for {current_month}.
+4. Confidence guidelines:
+   - 0.8–1.0: same month exists across 3+ years in pole data
+   - 0.6–0.8: same month exists across 2+ years OR strong pattern in all-poles data
+   - 0.4–0.6: limited pole data but clear overall seasonal trend
+   - 0.2–0.4: very sparse data, mostly guessing
+   - If you have 2+ years of ANY data showing a consistent pattern, confidence should be at least 0.6
 
-Return ONLY JSON:
+Return ONLY valid JSON:
 {{
   "coefficient": 1.0,
   "confidence": 0.85,
@@ -113,11 +141,15 @@ def simulate_week(company, pole, start_date, total_lines):
     hist_coef = compute_historical_coefficient()
     feedback = get_feedback_coefficient(company)
 
-    hist = get_historical_data_for_ai(company)
+    # Get pole-specific AND all-poles history
+    hist_pole = get_historical_data_for_ai(company, pole=pole)
+    hist_all = get_historical_data_for_ai(company, pole=None)
 
     ai_coef, ai_reason, ai_explain, confidence = get_ai_coef(
         company,
-        hist,
+        pole,
+        hist_pole,
+        hist_all,
         start_date
     )
 
@@ -172,6 +204,20 @@ with col4:
 
 if st.button("Generate Forecast", use_container_width=True):
 
+    # DEBUG: show what data the AI receives
+    with st.expander("🔍 Debug: Data sent to AI"):
+        hist_pole_debug = get_historical_data_for_ai(company, pole=pole)
+        hist_all_debug = get_historical_data_for_ai(company, pole=None)
+    
+        # Stats clés
+        years_pole = set(h["period"][:4] for h in hist_pole_debug)
+        years_all = set(h["period"][:4] for h in hist_all_debug)
+        
+        st.write(f"**Pole-specific ({pole}):** {len(hist_pole_debug)} months, years: {sorted(years_pole)}")
+        st.json(hist_pole_debug)
+        st.write(f"**All poles:** {len(hist_all_debug)} months, years: {sorted(years_all)}")
+        st.json(hist_all_debug)
+
     (
         employees,
         adjusted_lines,
@@ -210,8 +256,10 @@ if st.button("Generate Forecast", use_container_width=True):
 
 ### Formula
 $
-Adjusted Lines = (Lines × Hist × Feedback × AI) / 4  
-Employees = ceil(Adjusted Lines / (Productivity × 7h shift))
+Adjusted\\ Lines = (Lines × Hist × Feedback × AI) / 4  
+$
+$
+Employees = ceil(Adjusted\\ Lines / (Productivity × 7h\\ shift))
 $
 
 ---
