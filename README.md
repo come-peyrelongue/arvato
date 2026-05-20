@@ -42,6 +42,7 @@ The system provides:
 ## Run
 
 ```bash
+pip install streamlit pandas openpyxl
 streamlit run app.py
 ```
 
