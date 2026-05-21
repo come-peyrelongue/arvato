@@ -13,6 +13,9 @@ from utils import (
     compute_employees,
     get_historical_data_for_ai,
     save_simulation,
+    get_simulation_for_date,
+    normalize_company,
+    SIMULATION_FILE,
     POLES
 )
 from translations import t
@@ -65,11 +68,11 @@ def init_model():
 
 def get_ai_coef(company, pole, hist_pole, hist_all, target_date):
     if not hist_pole and not hist_all:
-        return 1.0, "Aucune donnee historique disponible", "Donnees insuffisantes", 0.0
+        return 1.0, "Aucune donnée historique disponible", "Donnés insuffisantes", 0.0
 
     model = init_model()
     if not model:
-        return 1.0, "IA desactivee", "IA non disponible", 0.0
+        return 1.0, "IA désactivée", "IA non disponible", 0.0
 
     current_month = pd.to_datetime(target_date).strftime("%B")
     current_period = pd.to_datetime(target_date).to_period("M")
@@ -86,32 +89,31 @@ def get_ai_coef(company, pole, hist_pole, hist_all, target_date):
     num_months_all = len(hist_all)
     num_years_all = len(years_all)
 
-    # Determine response language based on user setting
     response_lang = "en francais" if lang == "fr" else "in English"
 
     prompt = f"""
-Tu es un expert en prevision de chaine logistique.
+Tu es un expert en prévision de chaine logistique.
 
 Entreprise : {company}
 Pole : {pole}
-Periode de prevision : {current_period} ({current_month})
+Période de prévision : {current_period} ({current_month})
 
-== DONNEES SPECIFIQUES AU POLE ({pole}) — {num_months_pole} mois, annees : {', '.join(sorted(years_pole)) if years_pole else 'aucune'} ==
+== données SPECIFIQUES AU POLE ({pole}) — {num_months_pole} mois, années : {', '.join(sorted(years_pole)) if years_pole else 'aucune'} ==
 {json.dumps(hist_pole, indent=2)}
 
-== TOUS POLES CONFONDUS (contexte) — {num_months_all} mois couvrant {num_years_all} annees ({', '.join(sorted(years_all))}) ==
+== TOUS POLES CONFONDUS (contexte) — {num_months_all} mois couvrant {num_years_all} années ({', '.join(sorted(years_all))}) ==
 {json.dumps(hist_all, indent=2)}
 
 INSTRUCTIONS :
-1. Utilise les donnees specifiques au pole comme source principale de saisonnalite.
-2. Utilise les donnees tous poles confondus comme contexte secondaire.
+1. Utilise les données specifiques au pole comme source principale de saisonnalite.
+2. Utilise les données tous poles confondus comme contexte secondaire.
 3. Calcule un coefficient de saisonnalite pour {current_month}.
 4. Guide de confiance :
-   - 0.8-1.0 : le meme mois existe sur 3+ annees dans les donnees du pole
-   - 0.6-0.8 : le meme mois existe sur 2+ annees OU pattern fort dans tous poles
-   - 0.4-0.6 : donnees limitees mais tendance saisonniere claire
-   - 0.2-0.4 : donnees tres eparses
-   - Si tu as 2+ annees de donnees avec un pattern coherent, la confiance doit etre au moins 0.6
+   - 0.8-1.0 : le même mois existe sur 3+ années dans les données du pole
+   - 0.6-0.8 : le même mois existe sur 2+ années OU pattern fort dans tous poles
+   - 0.4-0.6 : données limitées mais tendance saisonniere claire
+   - 0.2-0.4 : données très éparses
+   - Si tu as 2+ années de données avec un pattern cohérent, la confiance doit être au moins 0.6
 
 Reponds UNIQUEMENT avec un JSON valide, et ecris la raison {response_lang} :
 {{
@@ -137,7 +139,7 @@ Reponds UNIQUEMENT avec un JSON valide, et ecris la raison {response_lang} :
 
         confidence = max(0.0, min(confidence, 1.0))
 
-        return coef, reason, "Ajustement saisonnier IA applique", confidence
+        return coef, reason, "Ajustement saisonnier IA appliqué", confidence
 
     except Exception as e:
         return 1.0, str(e), "Erreur IA", 0.0
@@ -199,7 +201,7 @@ with col1:
     company = st.selectbox(t("Entreprise", lang), companies)
 
 with col2:
-    pole = st.selectbox(t("Pole", lang), POLES)
+    pole = st.selectbox(t("Pôle", lang), POLES)
 
 col3, col4 = st.columns(2)
 
@@ -213,18 +215,77 @@ with col4:
         value=0
     )
 
+# =========================
+# CHECK IF SIMULATION ALREADY EXISTS
+# =========================
+
+simulation_already_exists = False
+existing_simulations = get_simulation_for_date(company, start_date)
+
+if existing_simulations:
+    # Filter by pole too
+    matching = [s for s in existing_simulations if s.get("pole") == pole]
+    if matching:
+        simulation_already_exists = True
+
+st.markdown("---")
+
+if simulation_already_exists:
+    st.warning(t("Une simulation existe déjà pour cette entreprise, ce pôle et cette date.", lang))
+
+    with st.expander(t("Gérer les simulations", lang)):
+
+        sim_df = pd.read_csv(SIMULATION_FILE)
+        sim_df["start_date"] = pd.to_datetime(sim_df["start_date"], errors="coerce").dt.date
+
+        mask = (
+            (sim_df["company"] == normalize_company(company)) &
+            (sim_df["start_date"] == pd.to_datetime(start_date).date()) &
+            (sim_df["pole"] == pole)
+        )
+        existing = sim_df[mask]
+
+        for idx in existing.index:
+            row = sim_df.loc[idx]
+            col_info, col_delete = st.columns([4, 1])
+
+            with col_info:
+                created = pd.to_datetime(row.get("created_at", ""), errors="coerce")
+                created_str = created.strftime("%Y/%m/%d %H:%M") if pd.notna(created) else "N/A"
+
+                st.markdown(
+                    f"**{t('Pôle', lang)} :** {row.get('pole', 'N/A')} | "
+                    f"**{t('Employés recommandés', lang)} :** {row.get('employees_recommended', 'N/A')} | "
+                    f"**{t('Coefficient IA', lang)} :** {row.get('ai_coef', 'N/A'):.2f} | "
+                    f"**{t('Confiance', lang)} :** {row.get('confidence', 'N/A'):.2f} | "
+                    f"**{t('Créé le', lang)} :** {created_str}"
+                )
+
+            with col_delete:
+                if st.button(t("Supprimer", lang), key=f"delete_sim_{idx}", use_container_width=True):
+                    sim_df = sim_df.drop(idx)
+                    sim_df.to_csv(SIMULATION_FILE, index=False)
+                    st.success(t("Simulation supprimée.", lang))
+                    st.rerun()
+
+    st.stop()
+
+# =========================
+# GENERATE FORECAST
+# =========================
+
 if st.button(t("Générer la prévision", lang), use_container_width=True):
 
-    with st.expander("Debug : Données envoyées à l'IA"):
+    with st.expander("Debug : données envoyées à l'IA"):
         hist_pole_debug = get_historical_data_for_ai(company, pole=pole)
         hist_all_debug = get_historical_data_for_ai(company, pole=None)
 
         years_pole = set(h["period"][:4] for h in hist_pole_debug)
         years_all = set(h["period"][:4] for h in hist_all_debug)
 
-        st.write(f"**Spécifique au pole ({pole}) :** {len(hist_pole_debug)} mois, années : {sorted(years_pole)}")
+        st.write(f"**Specifique au pôle ({pole}) :** {len(hist_pole_debug)} mois, années : {sorted(years_pole)}")
         st.json(hist_pole_debug)
-        st.write(f"**Tous poles :** {len(hist_all_debug)} mois, années : {sorted(years_all)}")
+        st.write(f"**Tous les pôles :** {len(hist_all_debug)} mois, années : {sorted(years_all)}")
         st.json(hist_all_debug)
 
     (
@@ -254,7 +315,7 @@ if st.button(t("Générer la prévision", lang), use_container_width=True):
         confidence=confidence
     )
 
-    st.subheader(t("Resultat", lang))
+    st.subheader(t("Résultat", lang))
 
     st.metric(t("Employés nécessaires", lang), f"{employees}")
     st.metric(t("Confiance IA", lang), f"{confidence:.2f}")
@@ -264,30 +325,30 @@ if st.button(t("Générer la prévision", lang), use_container_width=True):
     st.write(f"### {t('Explication du calcul', lang)}")
 
     st.markdown(f"""
-- {t("Lignes de base", lang)} : **{total_lines}**
-- {t("Coefficient historique", lang)} : **{h:.2f}**
-- {t("Coefficient de feedback", lang)} : **{f:.2f}**
-- {t("Coefficient saisonnier IA", lang)} : **{ai:.2f}**
-- {t("Confiance IA", lang)} : **{confidence:.2f}**
-- {t("Productivite", lang)} : **{prod} {t("lignes/heure", lang)}**
+    - {t("Lignes de base", lang)} : **{total_lines}**
+    - {t("Coefficient historique", lang)} : **{h:.2f}**
+    - {t("Coefficient de feedback", lang)} : **{f:.2f}**
+    - {t("Coefficient saisonnier IA", lang)} : **{ai:.2f}**
+    - {t("Confiance IA", lang)} : **{confidence:.2f}**
+    - {t("Productivite", lang)} : **{prod} {t("lignes/heure", lang)}**
 
----
+    ---
 
-### {t("Formule", lang)}
-$
-Lignes\\ ajustees = (Lignes \\times Hist \\times Feedback \\times IA) / 4
-$
-$
-Employes = ceil(Lignes\\ ajustees / (Productivite \\times 7h))
-$
+    ### {t("Formule", lang)}
+    $
+    Lignes\\ ajustees = (Lignes \\times Hist \\times Feedback \\times IA) / 4
+    $
+    $
+    Employes = ceil(Lignes\\ ajustees / (Productivite \\times 7h))
+    $
 
----
+    ---
 
-### {t("Explication IA", lang)}
-{reason}
+    ### {t("Explication IA", lang)}
+    {reason}
 
----
+    ---
 
-### {t("Note systeme", lang)}
-{explain}
-""")
+    ### {t("Note systeme", lang)}
+    {explain}
+    """)

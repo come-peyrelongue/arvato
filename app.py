@@ -85,12 +85,12 @@ pages = {
 
     t("Gestion", lang): [
         st.Page("companies.py", title=t("Entreprises", lang), icon=":material/enterprise:"),
-        st.Page("productivity.py", title=t("Productivite", lang), icon=":material/avg_pace:"),
+        st.Page("productivity.py", title=t("Productivité", lang), icon=":material/avg_pace:"),
     ],
 
     t("Operations", lang): [
-        st.Page("ingestion.py", title=t("Ingestion des donnees", lang), icon=":material/data_check:"),
-        st.Page("forecast.py", title=t("Prevision", lang), icon=":material/readiness_score:"),
+        st.Page("ingestion.py", title=t("Ingestion des données", lang), icon=":material/data_check:"),
+        st.Page("forecast.py", title=t("Prévision", lang), icon=":material/readiness_score:"),
         st.Page("feedback.py", title=t("Feedback", lang), icon=":material/add_reaction:"),
     ],
 }

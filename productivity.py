@@ -31,8 +31,8 @@ for i, pole in enumerate(POLES):
             )
         )
 
-if st.button(t("Enregistrer la productivite", lang), use_container_width=True):
+if st.button(t("Enregistrer la productivité", lang), use_container_width=True):
 
     save_productivity(company, new_prod)
 
-    st.success(t("Enregistre", lang))
+    st.success(t("Productivité enregistrée avec succès", lang))

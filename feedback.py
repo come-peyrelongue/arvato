@@ -146,7 +146,7 @@ if status_key == "OK":
     if simulation_exists:
         counts = True
     else:
-        reason_no_count = t("Semaine OK mais aucune simulation n'existait — rien a valider.", lang)
+        reason_no_count = t("Semaine OK mais aucune simulation n'existait — rien à valider.", lang)
 
 elif status_key == "KO_EXTERNE":
     reason_no_count = t("Evenement externe — non représentatif.", lang)
