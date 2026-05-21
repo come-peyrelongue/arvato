@@ -57,7 +57,7 @@ macOS / Linux:
 
 ### 3. Install dependencies
 
-    pip install streamlit pandas openpyxl google-generativeai
+    pip install streamlit pandas openpyxl google-generativeai deep-translator
 
 Or if a requirements.txt is provided:
 
