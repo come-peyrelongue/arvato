@@ -2,8 +2,15 @@ import streamlit as st
 
 st.set_page_config(
     page_title="Staffing Forecast System",
-    layout="wide"
+    layout="wide",
+    page_icon="img/favicon.png",
 )
+
+# =========================
+# LOGO (tout en haut de la sidebar, au-dessus de la navigation)
+# =========================
+
+st.logo("img/logo.png", size="large", icon_image="img/favicon.png")
 
 # =========================
 # CSS OPTIMIZATIONS
@@ -53,7 +60,6 @@ LANGUAGES = {
 if "lang" not in st.session_state:
     st.session_state.lang = "fr"
 
-# Find current index
 lang_names = list(LANGUAGES.keys())
 lang_codes = list(LANGUAGES.values())
 current_index = lang_codes.index(st.session_state.lang) if st.session_state.lang in lang_codes else 0
@@ -88,7 +94,7 @@ pages = {
         st.Page("productivity.py", title=t("Productivité", lang), icon=":material/avg_pace:"),
     ],
 
-    t("Operations", lang): [
+    t("Opérations", lang): [
         st.Page("ingestion.py", title=t("Ingestion des données", lang), icon=":material/data_check:"),
         st.Page("forecast.py", title=t("Prévision", lang), icon=":material/readiness_score:"),
         st.Page("feedback.py", title=t("Feedback", lang), icon=":material/add_reaction:"),
