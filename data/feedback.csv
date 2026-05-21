@@ -1,2 +1,4 @@
-company,date,status,real_staff
-S,2026-05-20,KO_EFFECTIF,9
+company,date,status,real_staff,simulation_existed,counts,submitted_at
+S,2026-06-21,OK,,True,True,2026-05-21T01:59:37.846980
+S,2026-10-01,KO_SUIVI,5.0,True,True,2026-05-21T02:00:10.423827
+W,2026-10-01,OK,,True,True,2026-05-21T02:00:56.072711

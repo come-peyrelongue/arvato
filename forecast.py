@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 from datetime import timedelta
+from pathlib import Path
 import re
 import json
 
@@ -11,8 +12,20 @@ from utils import (
     compute_historical_coefficient,
     compute_employees,
     get_historical_data_for_ai,
+    save_simulation,
     POLES
 )
+
+# =========================
+# CONFIG
+# =========================
+
+CONFIG_FILE = Path(__file__).resolve().parent / "config.json"
+
+def load_config():
+    if not CONFIG_FILE.exists():
+        return {}
+    return json.loads(CONFIG_FILE.read_text())
 
 # =========================
 # GEMINI SETUP
@@ -24,17 +37,19 @@ try:
 except:
     GOOGLE_AI_AVAILABLE = False
 
-GOOGLE_API_KEY = "AIzaSyAIJnREhIXOZfMWLEUsBeSXtbW6nzSNaaU"
 
 def init_model():
     if not GOOGLE_AI_AVAILABLE:
         return None
 
-    if not GOOGLE_API_KEY or "YOUR" in GOOGLE_API_KEY:
+    config = load_config()
+    api_key = config.get("GOOGLE_API_KEY", "")
+
+    if not api_key:
         return None
 
     try:
-        genai.configure(api_key=GOOGLE_API_KEY)
+        genai.configure(api_key=api_key)
         return genai.GenerativeModel("gemini-2.5-flash")
     except Exception as e:
         st.warning(f"Gemini init error: {e}")
@@ -233,6 +248,16 @@ if st.button("Generate Forecast", use_container_width=True):
         pole,
         pd.to_datetime(start_date),
         total_lines
+    )
+
+    save_simulation(
+        company=company,
+        pole=pole,
+        start_date=start_date,
+        employees=employees,
+        adjusted_lines=adjusted_lines,
+        ai_coef=ai,
+        confidence=confidence
     )
 
     st.subheader("Result")

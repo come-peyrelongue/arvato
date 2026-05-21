@@ -21,6 +21,8 @@ FORECAST_DATA_DIR.mkdir(parents=True, exist_ok=True)
 COMPANIES_FILE = DATA_DIR / "companies.json"
 SIMULATION_FILE = DATA_DIR / "simulations.csv"
 COEF_FILE = DATA_DIR / "coefficients.json"
+FEEDBACK_FILE = DATA_DIR / "feedback.csv"
+SIMULATION_FILE = DATA_DIR / "simulations.csv"
 
 SHIFT_HOURS = 7
 POLES = ["PICKING", "PROMO", "BULK", "GLOBAL"]
@@ -154,7 +156,7 @@ def get_feedback_coefficient(company):
 
 
 # =========================
-# HISTORICAL DATA (FIX CRITIQUE)
+# HISTORICAL DATA
 # =========================
 def get_historical_data_for_ai(company, pole=None):
     """
@@ -243,3 +245,90 @@ def compute_historical_coefficient():
         return 1.0
 
     return df["real_lines"].sum() / total_forecast
+
+# =========================
+# SIMULATIONS STORAGE
+# =========================
+def save_simulation(company, pole, start_date, employees, adjusted_lines, ai_coef, confidence):
+    """Save a simulation result for later feedback reference."""
+    row = {
+        "company": normalize_company(company),
+        "pole": pole,
+        "start_date": str(start_date),
+        "employees_recommended": employees,
+        "adjusted_lines": round(adjusted_lines, 2),
+        "ai_coef": round(ai_coef, 4),
+        "confidence": round(confidence, 4),
+        "created_at": pd.Timestamp.now().isoformat()
+    }
+
+    if SIMULATION_FILE.exists():
+        df = pd.read_csv(SIMULATION_FILE)
+        df = pd.concat([df, pd.DataFrame([row])], ignore_index=True)
+    else:
+        df = pd.DataFrame([row])
+
+    df.to_csv(SIMULATION_FILE, index=False)
+
+def get_simulation_for_date(company, date):
+    """Retrieve simulation(s) for a specific company and date."""
+    if not SIMULATION_FILE.exists():
+        return None
+
+    try:
+        df = pd.read_csv(SIMULATION_FILE)
+    except Exception:
+        return None
+
+    if df.empty:
+        return None
+
+    # Check that required column exists
+    if "start_date" not in df.columns:
+        return None
+
+    df["start_date"] = pd.to_datetime(df["start_date"], errors="coerce").dt.date
+
+    mask = (
+        (df["company"] == normalize_company(company)) &
+        (df["start_date"] == pd.to_datetime(date).date())
+    )
+
+    results = df[mask]
+
+    if results.empty:
+        return None
+
+    return results.to_dict("records")
+
+# =========================
+# FEEDBACK COEFFICIENT UPDATE
+# =========================
+def update_feedback(company, status, counts):
+    if not counts:
+        return
+
+    data = load_coefficients()
+    company_key = normalize_company(company)
+
+    if company_key not in data:
+        data[company_key] = {}
+
+    entry = data[company_key]
+
+    # Use .get() to handle missing keys from old data
+    entry["total_feedbacks"] = entry.get("total_feedbacks", 0) + 1
+
+    if status == "OK":
+        entry["positive_feedbacks"] = entry.get("positive_feedbacks", 0) + 1
+
+    total = entry.get("total_feedbacks", 1)
+    positive = entry.get("positive_feedbacks", 0)
+
+    if total > 0:
+        raw_ratio = positive / total
+        weight = min(total / 20, 1.0)
+        entry["feedback"] = round((1 - weight) * 1.0 + weight * raw_ratio, 4)
+
+    data[company_key] = entry
+    COEF_FILE.write_text(json.dumps(data, indent=2))

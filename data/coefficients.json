@@ -1,5 +1,12 @@
 {
-    "S": {
-        "feedback": 0.97
-    }
+  "S": {
+    "feedback": 0.95,
+    "total_feedbacks": 2,
+    "positive_feedbacks": 1
+  },
+  "W": {
+    "total_feedbacks": 1,
+    "positive_feedbacks": 1,
+    "feedback": 1.0
+  }
 }
