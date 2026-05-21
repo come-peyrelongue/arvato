@@ -1,9 +1,12 @@
 import streamlit as st
+
 from utils import *
+from translations import t
 
-st.title("Company Management")
+lang = st.session_state.get("lang", "fr")
 
-# CSS to vertically align elements within columns
+st.title(t("Gestion des entreprises", lang))
+
 st.markdown(
     """
     <style>
@@ -21,19 +24,26 @@ companies = load_companies()
 # CREATE
 # ============================================================
 
-st.subheader("Create company")
+st.subheader(t("Créer une entreprise", lang))
 
-new_company = st.text_input("Company name")
+new_company = st.text_input(t("Nom de l'entreprise", lang))
 
-if st.button("Create company", use_container_width=True):
+if st.button(t("Créer une entreprise", lang), use_container_width=True):
+
     if new_company:
+
         if new_company not in companies:
+
             companies.append(new_company)
+
             save_companies(companies)
-            st.success("Company created")
+
+            st.success(t("Entreprise créee", lang))
+
             st.rerun()
+
         else:
-            st.warning("Company already exists")
+            st.warning(t("L'entreprise existe déjà", lang))
 
 # ============================================================
 # LIST
@@ -41,15 +51,17 @@ if st.button("Create company", use_container_width=True):
 
 st.markdown("---")
 
-st.subheader("Existing companies")
+st.subheader(t("Entreprises existantes", lang))
 
 if not companies:
-    st.info("No companies registered")
+
+    st.info(t("Aucune entreprise enregistrée", lang))
+
 else:
-    # Headers
+
     header_cols = st.columns([3, 4, 2, 2])
-    header_cols[0].markdown("")
-    header_cols[1].markdown("")
+    header_cols[0].markdown(f"**{t('Entreprise', lang)}**")
+    header_cols[1].markdown(f"**{t('Nouveau nom', lang)}**")
     header_cols[2].markdown("")
     header_cols[3].markdown("")
 
@@ -59,20 +71,17 @@ else:
 
         col_name, col_input, col_rename, col_delete = st.columns([3, 4, 2, 2])
 
-        # NAME
         col_name.write(company)
 
-        # RENAME INPUT
         new_name = col_input.text_input(
-            "New name",
+            t("Nouveau nom", lang),
             key=f"rename_{company}",
             label_visibility="collapsed",
-            placeholder="New name…",
+            placeholder=t("Nouveau nom", lang) + "...",
         )
 
-        # RENAME BUTTON
         if col_rename.button(
-            "Rename",
+            t("Renommer", lang),
             key=f"rename_btn_{company}",
             use_container_width=True,
         ):
@@ -81,18 +90,17 @@ else:
                     new_name if c == company else c for c in companies
                 ]
                 save_companies(companies)
-                st.success("Company renamed")
+                st.success(t("Entreprise renommée", lang))
                 st.rerun()
 
-        # DELETE BUTTON
         if col_delete.button(
-            "Delete",
+            t("Supprimer", lang),
             key=f"delete_{company}",
             use_container_width=True,
         ):
             companies.remove(company)
             save_companies(companies)
-            st.success("Company deleted")
+            st.success(t("Entreprise supprimée", lang))
             st.rerun()
 
         st.markdown("---")

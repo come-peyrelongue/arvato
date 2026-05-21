@@ -1,12 +1,15 @@
 import streamlit as st
 
 from utils import *
+from translations import t
 
-st.title("Productivity")
+lang = st.session_state.get("lang", "fr")
+
+st.title(t("Productivité", lang))
 
 companies = load_companies()
 
-company = st.selectbox("Company", companies)
+company = st.selectbox(t("Entreprise", lang), companies)
 
 prod = load_productivity(company)
 
@@ -28,8 +31,8 @@ for i, pole in enumerate(POLES):
             )
         )
 
-if st.button("Save Productivity"):
+if st.button(t("Enregistrer la productivite", lang), use_container_width=True):
 
     save_productivity(company, new_prod)
 
-    st.success("Saved")
+    st.success(t("Enregistre", lang))

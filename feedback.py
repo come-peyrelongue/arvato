@@ -9,13 +9,16 @@ from utils import (
     FEEDBACK_FILE,
     DATA_DIR
 )
+from translations import t
 
-st.title("Feedback")
+lang = st.session_state.get("lang", "fr")
+
+st.title(t("Feedback", lang))
 
 companies = load_companies()
 
 if not companies:
-    st.error("No companies registered")
+    st.error(t("Aucune entreprise enregistrée", lang))
     st.stop()
 
 # =========================
@@ -25,17 +28,16 @@ if not companies:
 col1, col2 = st.columns(2)
 
 with col1:
-    company = st.selectbox("Company", companies)
+    company = st.selectbox(t("Entreprise", lang), companies)
 
 with col2:
-    date = st.date_input("Week start date")
+    date = st.date_input(t("Date de début de semaine", lang))
 
 # =========================
 # CHECK IF FEEDBACK ALREADY EXISTS
 # =========================
 
 feedback_already_given = False
-existing_feedback_index = None
 
 if FEEDBACK_FILE.exists():
     fb_df = pd.read_csv(FEEDBACK_FILE)
@@ -46,7 +48,6 @@ if FEEDBACK_FILE.exists():
         )
         if mask.any():
             feedback_already_given = True
-            existing_feedback_index = fb_df[mask].index.tolist()
 
 # =========================
 # SHOW SIMULATION IF EXISTS
@@ -57,22 +58,22 @@ st.markdown("---")
 simulations = get_simulation_for_date(company, date)
 
 if simulations:
-    st.subheader("Simulation found for this week")
+    st.subheader(t("Simulation trouvée pour cette semaine", lang))
 
     for sim in simulations:
         with st.container():
             cols = st.columns([2, 2, 2, 2, 3])
-            cols[0].metric("Pole", sim["pole"])
-            cols[1].metric("Employees recommended", sim["employees_recommended"])
-            cols[2].metric("AI Coefficient", f"{sim['ai_coef']:.2f}")
-            cols[3].metric("Confidence", f"{sim['confidence']:.2f}")
+            cols[0].metric(t("Pole", lang), sim["pole"])
+            cols[1].metric(t("Employés recommandés", lang), sim["employees_recommended"])
+            cols[2].metric(t("Coefficient IA", lang), f"{sim['ai_coef']:.2f}")
+            cols[3].metric(t("Confiance", lang), f"{sim['confidence']:.2f}")
             created_dt = pd.to_datetime(sim["created_at"])
-            cols[4].metric("Created at", created_dt.strftime("%Y/%m/%d %H:%M"))
+            cols[4].metric(t("Créé le", lang), created_dt.strftime("%Y/%m/%d %H:%M"))
         st.markdown("---")
 
     simulation_exists = True
 else:
-    st.info("No simulation found for this date and company.")
+    st.info(t("Aucune simulation trouvée pour cette date et cette entreprise.", lang))
     simulation_exists = False
 
 # =========================
@@ -80,9 +81,9 @@ else:
 # =========================
 
 if feedback_already_given:
-    st.warning(f"A feedback has already been submitted for {company} on {date}.")
+    st.warning(t("Un feedback a déjà été soumis pour cette entreprise à cette date.", lang))
 
-    with st.expander("Manage feedbacks"):
+    with st.expander(t("Gerer les feedbacks", lang)):
 
         fb_df = pd.read_csv(FEEDBACK_FILE)
         mask = (
@@ -98,21 +99,21 @@ if feedback_already_given:
                 submitted = pd.to_datetime(row.get("submitted_at", ""), errors="coerce")
                 submitted_str = submitted.strftime("%Y/%m/%d %H:%M") if pd.notna(submitted) else "N/A"
                 status_display = row.get("status", "N/A")
-                counted = "Yes" if row.get("counts") else "No"
+                counted = t("Oui", lang) if row.get("counts") else t("Non", lang)
                 real_staff = row.get("real_staff", "N/A")
 
                 st.markdown(
-                    f"**Status:** {status_display} | "
-                    f"**Counts:** {counted} | "
-                    f"**Real staff:** {real_staff} | "
-                    f"**Submitted:** {submitted_str}"
+                    f"**{t('Statut', lang)} :** {status_display} | "
+                    f"**{t('Comptabilisé', lang)} :** {counted} | "
+                    f"**{t('Effectif reel', lang)} :** {real_staff} | "
+                    f"**{t('Soumis le', lang)} :** {submitted_str}"
                 )
 
             with col_delete:
-                if st.button("Delete", key=f"delete_fb_{idx}", use_container_width=True):
+                if st.button(t("Supprimer", lang), key=f"delete_fb_{idx}", use_container_width=True):
                     fb_df = fb_df.drop(idx)
                     fb_df.to_csv(FEEDBACK_FILE, index=False)
-                    st.success("Feedback deleted.")
+                    st.success(t("Feedback supprime.", lang))
                     st.rerun()
 
     st.stop()
@@ -121,19 +122,17 @@ if feedback_already_given:
 # FEEDBACK FORM
 # =========================
 
-st.subheader("Submit Feedback")
+st.subheader(t("Soumettre un feedback", lang))
 
-status = st.selectbox(
-    "How did the week go?",
-    [
-        "OK — Week went well",
-        "KO_EXTERNE — Problem due to external event",
-        "KO_SUIVI — Problem, but team followed the recommendation",
-        "KO_NON_SUIVI — Problem, team did NOT follow the recommendation"
-    ]
-)
+status_options = [
+    "OK — " + t("La semaine s'est bien passée", lang),
+    "KO_EXTERNE — " + t("Problème du à un évenement externe", lang),
+    "KO_SUIVI — " + t("Problème, mais l'équipe a suivi la recommandation", lang),
+    "KO_NON_SUIVI — " + t("Problème, l'équipe n'a PAS suivi la recommandation", lang),
+]
 
-# Extract status key
+status = st.selectbox(t("Comment s'est passée la semaine ?", lang), status_options)
+
 status_key = status.split(" — ")[0]
 
 # =========================
@@ -147,19 +146,19 @@ if status_key == "OK":
     if simulation_exists:
         counts = True
     else:
-        reason_no_count = "Week was OK but no simulation existed — nothing to validate."
+        reason_no_count = t("Semaine OK mais aucune simulation n'existait — rien a valider.", lang)
 
 elif status_key == "KO_EXTERNE":
-    reason_no_count = "External event — not representative, feedback won't affect coefficients."
+    reason_no_count = t("Evenement externe — non représentatif.", lang)
 
 elif status_key == "KO_SUIVI":
     if simulation_exists:
         counts = True
     else:
-        reason_no_count = "No simulation existed for this date."
+        reason_no_count = t("Aucune simulation n'existait pour cette date.", lang)
 
 elif status_key == "KO_NON_SUIVI":
-    reason_no_count = "Team did not follow the recommendation — cannot evaluate the model."
+    reason_no_count = t("L'équipe n'a pas suivi la recommandation — impossible d'évaluer le modèle.", lang)
 
 # =========================
 # DISPLAY IMPACT PREVIEW
@@ -167,11 +166,11 @@ elif status_key == "KO_NON_SUIVI":
 
 if counts:
     if status_key == "OK":
-        st.success("This feedback will positively impact the model (recommendation was correct).")
+        st.success(t("Ce feedback impactera positivement le modèle (recommandation correcte).", lang))
     elif status_key == "KO_SUIVI":
-        st.warning("This feedback will negatively impact the model (recommendation was followed but insufficient).")
+        st.warning(t("Ce feedback impactera négativement le modèle (recommandation suivie mais insuffisante).", lang))
 else:
-    st.info(f"This feedback will NOT affect coefficients. Reason: {reason_no_count}")
+    st.info(f"{t('Ce feedback ne modifiera pas les coefficients.', lang)} {reason_no_count}")
 
 # =========================
 # OPTIONAL: REAL STAFF USED
@@ -180,7 +179,7 @@ else:
 real_staff = None
 if status_key == "KO_SUIVI":
     real_staff = st.number_input(
-        "How many employees were actually needed?",
+        t("Combien d'employés étaient réellement nécessaires ?", lang),
         min_value=0,
         value=0
     )
@@ -189,7 +188,7 @@ if status_key == "KO_SUIVI":
 # SUBMIT
 # =========================
 
-if st.button("Submit Feedback", use_container_width=True):
+if st.button(t("Soumettre le feedback", lang), use_container_width=True):
 
     row = {
         "company": normalize_company(company),
@@ -212,8 +211,8 @@ if st.button("Submit Feedback", use_container_width=True):
     update_feedback(company, status_key, counts)
 
     if counts:
-        st.success("Feedback saved and coefficients updated.")
+        st.success(t("Feedback enregistré et coefficients mis à jour.", lang))
     else:
-        st.success("Feedback saved (coefficients unchanged).")
+        st.success(t("Feedback enregistré (coefficients inchangés).", lang))
 
     st.rerun()

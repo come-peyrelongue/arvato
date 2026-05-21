@@ -1,14 +1,18 @@
 import streamlit as st
 import pandas as pd
+
 from utils import *
+from translations import t
 
-st.title("Data Ingestion")
+lang = st.session_state.get("lang", "fr")
+
+st.title(t("Ingestion des donnees", lang))
 
 # ============================================================
-# TABS (REAL / FORECAST)
+# TABS
 # ============================================================
 
-tab_real, tab_forecast = st.tabs(["Real Data", "Forecast Data"])
+tab_real, tab_forecast = st.tabs([t("Donnees reelles", lang), t("Donnees previsionnelles", lang)])
 
 # ============================================================
 # REAL DATA
@@ -16,17 +20,17 @@ tab_real, tab_forecast = st.tabs(["Real Data", "Forecast Data"])
 
 with tab_real:
 
-    st.subheader("Imported real files")
+    st.subheader(t("Fichiers reels importes", lang))
 
     files = list(REAL_DATA_DIR.glob("*"))
 
     if len(files) == 0:
-        st.info("No real data uploaded yet.")
+        st.info(t("Aucune donnee reelle importee.", lang))
     else:
         st.write([f.name for f in files])
 
     uploaded_real = st.file_uploader(
-        "Upload Real Data Excel",
+        t("Importer un fichier Excel de donnees reelles", lang),
         type=["xlsx"],
         key="real_upload"
     )
@@ -35,7 +39,7 @@ with tab_real:
 
         st.dataframe(pd.read_excel(uploaded_real).head())
 
-        if st.button("Process Real Data", key="btn_real"):
+        if st.button(t("Traiter les donnees reelles", lang), key="btn_real"):
 
             df = pd.read_excel(uploaded_real)
 
@@ -45,7 +49,7 @@ with tab_real:
                 uploaded_real.name
             ).write_bytes(uploaded_real.getbuffer())
 
-            st.success("Real data imported successfully")
+            st.success(t("Donnees reelles importees avec succes", lang))
 
 
 # ============================================================
@@ -54,18 +58,18 @@ with tab_real:
 
 with tab_forecast:
 
-    st.subheader("Forecast ingestion")
+    st.subheader(t("Ingestion des previsions", lang))
 
     forecast_file = FORECAST_DATA_DIR / "forecast_history.csv"
 
     if forecast_file.exists():
-        st.write("Existing forecast history loaded")
+        st.write(t("Historique de previsions charge", lang))
         st.dataframe(pd.read_csv(forecast_file).head())
     else:
-        st.info("No forecast data yet.")
+        st.info(t("Aucune donnee previsionnelle.", lang))
 
     uploaded_forecast = st.file_uploader(
-        "Upload Forecast Excel",
+        t("Importer un fichier Excel de previsions", lang),
         type=["xlsx"],
         key="forecast_upload"
     )
@@ -75,7 +79,7 @@ with tab_forecast:
         df = pd.read_excel(uploaded_forecast)
         st.dataframe(df.head())
 
-        if st.button("Store Forecast", key="btn_forecast"):
+        if st.button(t("Enregistrer les previsions", lang), key="btn_forecast"):
 
             df["upload_date"] = pd.Timestamp.today()
 
@@ -85,4 +89,4 @@ with tab_forecast:
 
             df.to_csv(forecast_file, index=False)
 
-            st.success("Forecast stored successfully")
+            st.success(t("Previsions enregistrees avec succes", lang))
